@@ -1,27 +1,13 @@
 package cupaloy
 
 import (
-	"bytes"
-	"errors"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
-	"github.com/bradleyjkemp/cupaloy/v2/internal"
-
 	"github.com/davecgh/go-spew/spew"
-	"github.com/pmezard/go-difflib/difflib"
 )
-
-var spewConfig = spew.ConfigState{
-	Indent:                  "  ",
-	SortKeys:                true, // maps should be spewed in a deterministic order
-	DisablePointerAddresses: true, // don't spew the addresses of pointers
-	DisableCapacities:       true, // don't spew capacities of collections
-	SpewKeys:                true, // if unable to sort map keys then spew keys to strings and sort those
-}
 
 //go:generate $GOPATH/bin/mockery -output=examples -outpkg=examples_test -testonly -name=TestingT
 
@@ -53,89 +39,13 @@ func (c *Config) snapshotFilePath(testName string) string {
 
 // Legacy snapshot format where all items were spewed
 func takeV1Snapshot(i ...interface{}) string {
+	spewConfig := spew.ConfigState{
+		Indent:                  "  ",
+		SortKeys:                true, // maps should be spewed in a deterministic order
+		DisablePointerAddresses: true, // don't spew the addresses of pointers
+		DisableCapacities:       true, // don't spew capacities of collections
+		SpewKeys:                true, // if unable to sort map keys then spew keys to strings and sort those
+	}
+
 	return spewConfig.Sdump(i...)
-}
-
-// New snapshot format where some types are written out raw to the file
-func takeSnapshot(i ...interface{}) string {
-	snapshot := &bytes.Buffer{}
-	for _, v := range i {
-		switch vt := v.(type) {
-		case string:
-			snapshot.WriteString(vt)
-			snapshot.WriteString("\n")
-		case []byte:
-			snapshot.Write(vt)
-			snapshot.WriteString("\n")
-		default:
-			spewConfig.Fdump(snapshot, v)
-		}
-	}
-
-	return snapshot.String()
-}
-
-func (c *Config) readSnapshot(snapshotName string) (string, error) {
-	snapshotFile := c.snapshotFilePath(snapshotName)
-	buf, err := ioutil.ReadFile(snapshotFile)
-
-	if os.IsNotExist(err) {
-		return "", err
-	}
-
-	if err != nil {
-		return "", err
-	}
-
-	return string(buf), nil
-}
-
-func (c *Config) updateSnapshot(snapshotName string, prevSnapshot string, snapshot string) error {
-	// check that subdirectory exists before writing snapshot
-	err := os.MkdirAll(c.subDirName, os.ModePerm)
-	if err != nil {
-		return errors.New("could not create snapshots directory")
-	}
-
-	snapshotFile := c.snapshotFilePath(snapshotName)
-	_, err = os.Stat(snapshotFile)
-	isNewSnapshot := os.IsNotExist(err)
-
-	err = ioutil.WriteFile(snapshotFile, []byte(snapshot), os.FileMode(0644))
-	if err != nil {
-		return err
-	}
-
-	if !c.failOnUpdate {
-		//TODO: should a warning still be printed here?
-		return nil
-	}
-
-	snapshotDiff := diffSnapshots(prevSnapshot, snapshot)
-
-	if isNewSnapshot {
-		return internal.ErrSnapshotCreated{
-			Name:     snapshotName,
-			Contents: snapshot,
-		}
-	}
-
-	return internal.ErrSnapshotUpdated{
-		Name: snapshotName,
-		Diff: snapshotDiff,
-	}
-}
-
-func diffSnapshots(previous, current string) string {
-	diff, _ := difflib.GetUnifiedDiffString(difflib.UnifiedDiff{
-		A:        difflib.SplitLines(previous),
-		B:        difflib.SplitLines(current),
-		FromFile: "Previous",
-		FromDate: "",
-		ToFile:   "Current",
-		ToDate:   "",
-		Context:  1,
-	})
-
-	return diff
 }

@@ -1,17 +1,26 @@
 package cupaloy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
-	"github.com/bradleyjkemp/cupaloy/v2/internal"
+	"github.com/adrianduke/cupaloy/internal"
 )
+
+type Cupaloy struct {
+	*Config
+	Snapshotter
+}
 
 // New constructs a new, configured instance of cupaloy using the given
 // Configurators applied to the default config.
-func New(configurators ...Configurator) *Config {
-	return NewDefaultConfig().WithOptions(configurators...)
+func New(configurators ...Configurator) *Cupaloy {
+	return &Cupaloy{
+		Config:      NewDefaultConfig().WithOptions(configurators...),
+		Snapshotter: NewSpewSnapshotter(),
+	}
 }
 
 // Snapshot calls Snapshotter.Snapshot with the global config.
@@ -42,14 +51,14 @@ func SnapshotT(t TestingT, i ...interface{}) {
 //
 // If using snapshots in tests, prefer the SnapshotT function which fails the test
 // directly, rather than requiring your to remember to check the error.
-func (c *Config) Snapshot(i ...interface{}) error {
+func (c *Cupaloy) Snapshot(i ...interface{}) error {
 	return c.snapshot(getNameOfCaller(), i...)
 }
 
 // SnapshotMulti is similar to Snapshot but can be called multiple times from the
 // same function. This is possible by providing a unique id for each snapshot which is
 // appended to the function name to form the snapshot name.
-func (c *Config) SnapshotMulti(snapshotID string, i ...interface{}) error {
+func (c *Cupaloy) SnapshotMulti(snapshotID string, i ...interface{}) error {
 	snapshotName := fmt.Sprintf("%s-%s", getNameOfCaller(), snapshotID)
 	return c.snapshot(snapshotName, i...)
 }
@@ -65,7 +74,7 @@ func (c *Config) SnapshotMulti(snapshotID string, i ...interface{}) error {
 // SnapshotT once in each.
 //
 // If using snapshots in tests, SnapshotT is preferred over Snapshot and SnapshotMulti.
-func (c *Config) SnapshotT(t TestingT, i ...interface{}) {
+func (c *Cupaloy) SnapshotT(t TestingT, i ...interface{}) {
 	t.Helper()
 	if t.Failed() {
 		return
@@ -82,36 +91,37 @@ func (c *Config) SnapshotT(t TestingT, i ...interface{}) {
 	}
 }
 
-// WithOptions returns a copy of an existing Config with additional Configurators applied.
-// This can be used to apply a different option for a single call e.g.
-//  snapshotter.WithOptions(cupaloy.SnapshotSubdirectory("testdata")).SnapshotT(t, result)
-// Or to modify the Global Config e.g.
-//  cupaloy.Global = cupaloy.Global.WithOptions(cupaloy.SnapshotSubdirectory("testdata"))
-func (c *Config) WithOptions(configurators ...Configurator) *Config {
-	clonedConfig := c.clone()
-
-	for _, configurator := range configurators {
-		configurator(clonedConfig)
+func (c *Cupaloy) WithOptions(configurators ...Configurator) *Cupaloy {
+	return &Cupaloy{
+		Config:      c.Config.WithOptions(configurators...),
+		Snapshotter: NewSpewSnapshotter(),
 	}
-
-	return clonedConfig
 }
 
-func (c *Config) snapshot(snapshotName string, i ...interface{}) error {
-	snapshot := takeSnapshot(i...)
-
-	prevSnapshot, err := c.readSnapshot(snapshotName)
-	if os.IsNotExist(err) {
-		if c.createNewAutomatically {
-			return c.updateSnapshot(snapshotName, prevSnapshot, snapshot)
-		}
-		return internal.ErrNoSnapshot{Name: snapshotName}
-	}
+func (c *Cupaloy) snapshot(snapshotName string, i ...interface{}) error {
+	snapshot, err := c.Snapshotter.Snapshot(i...)
 	if err != nil {
 		return err
 	}
 
-	if snapshot == prevSnapshot || takeV1Snapshot(i...) == prevSnapshot {
+	buf, err := os.Open(c.snapshotFilePath(snapshotName))
+	if os.IsNotExist(err) {
+		if c.createNewAutomatically {
+			return c.updateSnapshot(snapshotName, nil, snapshot)
+		}
+
+		return internal.ErrNoSnapshot{Name: snapshotName}
+	} else if err != nil {
+		return err
+	}
+
+	prevSnapshot, err := c.Snapshotter.ReadFrom(buf)
+	if err != nil {
+		return err
+	}
+
+	diff := c.Snapshotter.Diff(prevSnapshot, snapshot)
+	if diff == "" || takeV1Snapshot(i...) == prevSnapshot {
 		// previous snapshot matches current value
 		return nil
 	}
@@ -122,6 +132,45 @@ func (c *Config) snapshot(snapshotName string, i ...interface{}) error {
 	}
 
 	return internal.ErrSnapshotMismatch{
-		Diff: diffSnapshots(prevSnapshot, snapshot),
+		Diff: diff,
+	}
+}
+
+func (c *Cupaloy) updateSnapshot(snapshotName string, prevSnapshot, snapshot Snap) error {
+	// check that subdirectory exists before writing snapshot
+	err := os.MkdirAll(c.subDirName, os.ModePerm)
+	if err != nil {
+		return errors.New("could not create snapshots directory")
+	}
+
+	snapshotFile := c.snapshotFilePath(snapshotName)
+	_, err = os.Stat(snapshotFile)
+	isNewSnapshot := os.IsNotExist(err)
+
+	f, err := os.Create(snapshotFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	c.Snapshotter.WriteTo(f, snapshot)
+
+	if !c.failOnUpdate {
+		//TODO: should a warning still be printed here?
+		return nil
+	}
+
+	snapshotDiff := c.Snapshotter.Diff(prevSnapshot, snapshot)
+
+	if isNewSnapshot {
+		return internal.ErrSnapshotCreated{
+			Name:     snapshotName,
+			Contents: snapshot,
+		}
+	}
+
+	return internal.ErrSnapshotUpdated{
+		Name: snapshotName,
+		Diff: snapshotDiff,
 	}
 }

@@ -86,6 +86,21 @@ type Config struct {
 	snapshotFileExtension  string
 }
 
+// WithOptions returns a copy of an existing Config with additional Configurators applied.
+// This can be used to apply a different option for a single call e.g.
+//  snapshotter.WithOptions(cupaloy.SnapshotSubdirectory("testdata")).SnapshotT(t, result)
+// Or to modify the Global Config e.g.
+//  cupaloy.Global = cupaloy.Global.WithOptions(cupaloy.SnapshotSubdirectory("testdata"))
+func (c *Config) WithOptions(configurators ...Configurator) *Config {
+	clonedConfig := c.clone()
+
+	for _, configurator := range configurators {
+		configurator(clonedConfig)
+	}
+
+	return clonedConfig
+}
+
 // NewDefaultConfig returns a new Config instance initialised with the same options as
 // the original Global instance (i.e. before any config changes were made to it)
 func NewDefaultConfig() *Config {
@@ -100,7 +115,7 @@ func NewDefaultConfig() *Config {
 }
 
 // Global is the Config instance used by `cupaloy.SnapshotT` and other package-level functions.
-var Global = NewDefaultConfig()
+var Global = New()
 
 func (c *Config) clone() *Config {
 	return &Config{

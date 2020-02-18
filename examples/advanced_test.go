@@ -2,12 +2,14 @@ package examples_test
 
 import (
 	"bytes"
-	"github.com/bradleyjkemp/cupaloy/v2/internal"
 	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/bradleyjkemp/cupaloy/v2"
+	"github.com/adrianduke/cupaloy"
+	"github.com/adrianduke/cupaloy/internal"
+
 	"github.com/stretchr/testify/mock"
 )
 
@@ -65,7 +67,6 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("Error returned will be of type ErrSnapshotUpdated")
 	}
 
-
 }
 
 // If a snapshot doesn't exist then it is created and an error returned
@@ -74,6 +75,12 @@ func TestMissingSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func(t *testing.T) {
+		err := os.RemoveAll(tempdir)
+		if err != nil {
+			t.Error(err)
+		}
+	}(t)
 
 	snapshotter := cupaloy.New(
 		cupaloy.EnvVariableName("ENOEXIST"),
@@ -151,7 +158,7 @@ func TestGlobalFailOnUpdate(t *testing.T) {
 		cupaloy.FailOnUpdate(false),
 		cupaloy.ShouldUpdate(func() bool { return true }))
 	// reset global after test
-	defer func() { cupaloy.Global = cupaloy.NewDefaultConfig() }()
+	defer func() { cupaloy.Global = cupaloy.New() }()
 
 	mockT := &TestingT{}
 	mockT.On("Helper").Return()
@@ -165,7 +172,7 @@ func TestGlobalFailOnUpdate(t *testing.T) {
 func TestGlobalCreateNewAutomatically(t *testing.T) {
 	cupaloy.Global = cupaloy.Global.WithOptions(cupaloy.CreateNewAutomatically(false))
 	// reset global after test
-	defer func() { cupaloy.Global = cupaloy.NewDefaultConfig() }()
+	defer func() { cupaloy.Global = cupaloy.New() }()
 
 	mockT := &TestingT{}
 	mockT.On("Helper").Return()
@@ -191,7 +198,7 @@ func TestFailOnUpdate(t *testing.T) {
 func TestGlobalFatalOnMismatch(t *testing.T) {
 	cupaloy.Global = cupaloy.Global.WithOptions(cupaloy.FatalOnMismatch(true))
 	// reset global after test
-	defer func() { cupaloy.Global = cupaloy.NewDefaultConfig() }()
+	defer func() { cupaloy.Global = cupaloy.New() }()
 
 	mockT := &TestingT{}
 	mockT.On("Helper").Return()

@@ -4,11 +4,11 @@ import "fmt"
 
 type ErrSnapshotCreated struct {
 	Name     string
-	Contents string
+	Contents interface{}
 }
 
 func (e ErrSnapshotCreated) Error() string {
-	return fmt.Sprintf("snapshot created for test %s, with contents:\n%s", e.Name, e.Contents)
+	return fmt.Sprintf("snapshot created for test %s, with contents:\n%+v", e.Name, e.Contents)
 }
 
 type ErrSnapshotUpdated struct {
