@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/adrianduke/cupaloy"
-	"github.com/adrianduke/cupaloy/internal"
+	"github.com/adrianduke/cupaloy/v2"
+	"github.com/adrianduke/cupaloy/v2/internal"
 
 	"github.com/stretchr/testify/mock"
 )

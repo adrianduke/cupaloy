@@ -3,7 +3,7 @@ package examples
 import (
 	"testing"
 
-	"github.com/adrianduke/cupaloy"
+	"github.com/adrianduke/cupaloy/v2"
 )
 
 func TestString(t *testing.T) {

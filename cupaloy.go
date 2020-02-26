@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/adrianduke/cupaloy/internal"
+	"github.com/adrianduke/cupaloy/v2/internal"
 )
 
 type Cupaloy struct {
